@@ -32,10 +32,10 @@
 /* TestEnclave.edl - Top EDL file. */
 
 enclave {
-    
-from "sgx_tsgxssl.edl" import *;
 
-    /* 
+from "sgx_tsgxssl.edl" import *;
+include "femc_common.h"
+    /*
      * uprint - invokes OCALL to display string buffer inside the enclave.
      *  [in]: copy the string buffer to App outside.
      *  [string]: specifies 'str' is a NULL terminated buffer.
@@ -44,12 +44,18 @@ from "sgx_tsgxssl.edl" import *;
         void uprint([in, string] const char *str);
         void usgx_exit(int reason);
         int ucreate_thread();
+        int uocall_get_targetinfo([out, size=buf_size] void *target_info_buf, size_t buf_size);
+        int uocall_local_attest([in, size=buf_size_req] void *req_buf, size_t
+        buf_size_req, [out, size=buf_size_rsp] void *rsp_buf, size_t buf_size_rsp);
+        int uocall_remote_attest([in ,size=buf_size_req]void *req,
+        size_t buf_size_req, [out, size=buf_size_rsp]void *resp, size_t buf_size_rsp);
+        int uocall_heartbeat([in, size=buf_size]void *req_buf, size_t buf_size);
     };
 
 
     trusted {
         public void t_sgxssl_call_apis();
         public void new_thread_func();
- 
+
     };
 };

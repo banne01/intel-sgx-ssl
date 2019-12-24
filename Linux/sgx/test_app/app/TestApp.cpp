@@ -50,6 +50,9 @@
 #include "TestEnclave_u.h"
 
 
+#include <femc_common.h>
+#include <femc_runner.h>
+
 
 /* Global EID shared by multiple threads */
 sgx_enclave_id_t global_eid = 0;
@@ -153,9 +156,19 @@ void print_error_message(sgx_status_t ret)
             break;
         }
     }
-    
+
     if (idx == ttl)
         printf("Error: Unexpected error occurred [0x%x].\n", ret);
+}
+
+void print_binary(const char * tag, const char* buf, size_t len)
+{
+    printf ("{\" %s\":\"", tag);
+    size_t i;
+    for (i = 0; i < len; i++) {
+        printf("%02x", buf[i]);
+    }
+    printf("\"}\n");
 }
 
 /* Initialize the enclave:
@@ -173,7 +186,7 @@ int initialize_enclave(void)
 
     /* try to get the token saved in $HOME */
     const char *home_dir = getpwuid(getuid())->pw_dir;
-    if (home_dir != NULL && 
+    if (home_dir != NULL &&
         (strlen(home_dir)+strlen("/")+sizeof(TOKEN_FILENAME)+1) <= MAX_PATH) {
         /* compose the token path */
         strncpy(token_path, home_dir, strlen(home_dir));
@@ -202,7 +215,7 @@ int initialize_enclave(void)
     /* Step 2: call sgx_create_enclave to initialize an enclave instance */
     /* Debug Support: set 2nd parameter to 1 */
 
-    ret = sgx_create_enclave(TESTENCLAVE_FILENAME, SGX_DEBUG_FLAG, &token, &updated, &global_eid, NULL);
+    ret = sgx_create_enclave(TESTENCLAVE_FILENAME, 1, &token, &updated, &global_eid, NULL);
 
     if (ret != SGX_SUCCESS) {
         print_error_message(ret);
@@ -230,11 +243,118 @@ int initialize_enclave(void)
     return 0;
 }
 
+/* Ocall to get targetinfo from another enclave for local attestation */
+int uocall_get_targetinfo(void *target_info_buf, size_t buf_size)
+{
+    femc_runner_status_t femc_ret;
+    int ret;
+    struct femc_bytes *target_info = femc_bytes_with_external_buf(target_info_buf, buf_size, false);
+    if (!target_info) {
+        printf("Failed Femc rest call to alloc targetinfo\n");
+        return -1;
+    }
+
+    femc_ret = femc_runner_get_target_info(target_info);
+    if (femc_ret.err != FEMC_RUNNER_SUCCESS) {
+        printf("Failed femc_runner_get_target_info err %ld, http err %d \n", femc_ret.err, femc_ret.http_err);
+        return femc_ret.err;
+    }
+
+    ret = femc_bytes_len(target_info);
+    printf("Success femc_runner_get_target_info size %d \n", ret);
+    femc_bytes_free(target_info); /* frees the femc_bytes, but not the wrapped buffer */
+    return ret;
+}
+
+/* Ocall to generate local attestation based cerfiticate for application encalve */
+int uocall_local_attest( void *req_buf, size_t buf_size_req, void *rsp_buf, size_t buf_size_rsp)
+{
+    femc_runner_status_t femc_ret;
+    int ret;
+    struct femc_bytes *la_req = femc_bytes_with_external_buf(req_buf, buf_size_req, true);
+    struct femc_bytes *la_rsp = femc_bytes_with_external_buf(rsp_buf, buf_size_rsp, false);
+    if (!la_req || !la_rsp) {
+        printf("Failed Femc rest call to alloc la_req & la_rsp\n");
+        ret = -1;
+        goto out;
+    }
+
+    femc_ret = femc_runner_do_local_attestation(la_req, la_rsp);
+    if (femc_ret.err != FEMC_RUNNER_SUCCESS) {
+        printf("Failed femc_runner_do_local_attestation err %ld, http err %d \n", femc_ret.err, femc_ret.http_err);
+        ret = femc_ret.err;
+        goto out;
+    }
+    ret = femc_bytes_len(la_rsp);
+    printf("Success femc_runner_get_target_info size %d \n", ret);
+out:
+    /* these free the femc_bytes objects, but not the wrapped buffers */
+    femc_bytes_free(la_req);
+    femc_bytes_free(la_rsp);
+    return ret;
+}
+
+/* Ocall to generate Intel remote attestation based cerfiticates for application encalve */
+int uocall_remote_attest(void *req_buf, size_t buf_size_req, void *rsp_buf, size_t buf_size_rsp)
+{
+    femc_runner_status_t femc_ret;
+    int ret;
+    struct femc_bytes *ra_req = femc_bytes_with_external_buf(req_buf, buf_size_req, true);
+    struct femc_bytes *ra_rsp = femc_bytes_with_external_buf(rsp_buf, buf_size_rsp, false);
+    if (!ra_req || !ra_rsp) {
+        printf("Failed Femc rest call to alloc la_req & la_rsp\n");
+        ret = -1;
+        goto out;
+    }
+
+    femc_ret = femc_runner_do_remote_attestation(ra_req, ra_rsp);
+    if (femc_ret.err != FEMC_RUNNER_SUCCESS) {
+        printf("Failed femc_runner_do_remote_attestation err %ld, http err %d \n", femc_ret.err, femc_ret.http_err);
+        ret = femc_ret.err;
+        goto out;
+    }
+
+    ret = femc_bytes_len(ra_rsp);
+    printf("Success femc_runner_get_target_info size %d \n", ret);
+out:
+    /* these free the femc_bytes objects, but not the wrapped buffers */
+    femc_bytes_free(ra_req);
+    femc_bytes_free(ra_rsp);
+    return ret;
+}
+
+/* Ocall to generate Enclave Manager heartbeat for application encalve */
+int uocall_heartbeat(void *req_buf, size_t buf_size)
+{
+    femc_runner_status_t femc_ret;
+    int ret;
+    printf("Femc rest send heart beat\n");
+
+    struct femc_bytes *ra_req = femc_bytes_with_external_buf(req_buf, buf_size, true);
+    if (!ra_req) {
+        printf("Femc rest send heart beat error malloc \n");
+        ret = -1;
+        goto out;
+    }
+
+    femc_ret = femc_runner_send_heartbeat(ra_req);
+    if (femc_ret.err != FEMC_RUNNER_SUCCESS) {
+        printf("Failed femc_runner_send_heartbeat err %ld, http err %d \n", femc_ret.err, femc_ret.http_err);
+        ret = femc_ret.err;
+        goto out;
+    }
+    ret = 0;
+    printf("Success ocall_heartbeat\n");
+out:
+    femc_bytes_free(ra_req);
+    return ret;
+}
+
 /* OCall functions */
 void uprint(const char *str)
 {
-    /* Proxy/Bridge will check the length and null-terminate 
-     * the input string to prevent buffer overflow. 
+    /* Proxy/Bridge will check the length and null-terminate
+     * the input string to prevent buffer overflow.
      */
     printf("%s", str);
     fflush(stdout);
@@ -261,7 +381,6 @@ int ucreate_thread()
 	return res;
 }
 
-
 /* Application entry */
 int main(int argc, char *argv[])
 {
@@ -279,8 +398,8 @@ int main(int argc, char *argv[])
 
     /* Initialize the enclave */
     if (initialize_enclave() < 0)
-        return 1; 
- 
+        return 1;
+
     sgx_status_t status = t_sgxssl_call_apis(global_eid);
     if (status != SGX_SUCCESS) {
         printf("Call to t_sgxssl_call_apis has failed.\n");
@@ -288,6 +407,6 @@ int main(int argc, char *argv[])
     }
 
     sgx_destroy_enclave(global_eid);
-    
+
     return 0;
 }
