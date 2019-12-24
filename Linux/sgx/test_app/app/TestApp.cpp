@@ -381,14 +381,6 @@ int ucreate_thread()
 	return res;
 }
 
-int ftx_test(int test)
-{
-    printf("\n ftx test %d", test);
-
-    return test;
-}
-
-
 /* Application entry */
 int main(int argc, char *argv[])
 {

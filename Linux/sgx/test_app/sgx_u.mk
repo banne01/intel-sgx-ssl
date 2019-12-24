@@ -98,7 +98,6 @@ endif
 Security_Link_Flags := -Wl,-z,noexecstack -Wl,-z,relro -Wl,-z,now -pie
 
 App_Link_Flags := $(SGX_COMMON_CFLAGS) $(Security_Link_Flags) $(SGX_SHARED_LIB_FLAG) -L$(SGX_LIBRARY_PATH) -l$(Urts_Library_Name) -l$(UaeService_Library_Name) -L$(OPENSSL_LIBRARY_PATH) -l$(SgxSSL_Link_Libraries)  $(SGX_SDK)/femc/runner/lib/debug/libfemc_runner.a -lc -lpthread  -lprotobuf -lcpprest -lboost_system -lcrypto -lm -lssl -lstdc++
-#App_Link_Flags := $(SGX_COMMON_CFLAGS) $(Security_Link_Flags) $(SGX_SHARED_LIB_FLAG) -L$(SGX_LIBRARY_PATH) -l$(Urts_Library_Name) -l$(UaeService_Library_Name) -L$(OPENSSL_LIBRARY_PATH) -l$(SgxSSL_Link_Libraries)  $(SGX_SDK)/femc/runner/lib/debug/libfemc_runner.a -lc -lpthread  -lprotobuf -lcpprest -lboost_system -lcrypto -lm -lssl -lstdc++
 
 
 .PHONY: all test
